@@ -1,0 +1,199 @@
+######################################################
+## PROOF SET DATASET - U.S.MINT - DATA SCIENTIST POS##
+## Author:                      Ricardo Zambrano    ##
+## Version:                     0.1                 ##
+## Date Created:                May/24/2022         ##
+## Most Recent Review Date:     May/24/2022         ##
+## Rationale:                   Current Version     ##
+######################################################
+
+###############
+## LIBRARIES ##
+###############
+
+library(tidyverse) # Data science standard library
+library(lubridate)
+library(stringr) # Regular expressions
+library(htmlwidgets)
+library(lobstr)
+library(rlang)
+library(vctrs)
+library(TSA)
+
+#############################
+## ENVIRONMENT PREPARATION ##
+#############################
+
+# The following three lines of code set up the working directory
+getwd() 
+path <- "C:/Users/rzamb/Desktop/usMint_DataSci"
+setwd(path)
+
+##################
+## Data Request ##
+##################
+
+# Find all the csv files in the current directory
+re1 <- "\\.csv$" # Uses regular expression to locate .csv files
+pathsToFiles <- dir(pattern = re1)
+pathsToFiles
+
+saveDataExpGen <- function(pths) {
+  # Takes a csv file name with the format "py##.cvs"
+  # Generates an assignment expression 
+  # Note: Function might not be safe from bugs because of global variable
+  #       might need revision if becomes permanent
+  re2 <- "(^py)\\d\\d(.csv)$"
+  if (str_detect(pths,re2) == FALSE) {
+    stop("File name does not have the required format: 'py##.cvs'")
+  }
+  expr(!!sym(str_sub(pths,1,4)) <<- read_csv(!!paste0(path,"/",pths)))
+}
+
+saveData <- function(flName) {
+  # Takes a csv file name with the format "py##.cvs"
+  # Reads the csv file and store it on a tibble named after the cvs file name
+  eval(saveDataExpGen(flName))
+}
+
+# Stores all the csv files into tibbles
+map(pathsToFiles,saveData)
+
+#############################################
+## Data Exploration, Testing, and Cleaning ##
+#############################################
+
+pyNames <- c(rep(NA,length(pathsToFiles)))
+for (indx in seq_along(pathsToFiles)) {
+  pyNames[[indx]] <- str_sub(pathsToFiles[[indx]],1,4)
+}
+
+for (indx in 1:length(pyNames)) {
+  print(paste0("py",(indx+14)))
+  smry <- eval(expr(summary(!!sym(pyNames[[indx]]))))
+  print(smry)
+}
+
+ggplot(data = py15) +
+  geom_line(mapping = aes(x=Date, y=P17)) +
+  labs(title = "PY15 Data")
+
+ggplot(data = py16) +
+  geom_line(mapping = aes(x=DATE, y=`16RG`)) +
+  labs(title = "PY16 Data")
+
+ggplot(data = py17) +
+  geom_line(mapping = aes(x=DATE, y=`17RG`)) +
+  labs(title = "PY17 Data")
+
+ggplot(data = py18) +
+  geom_line(mapping = aes(x=DATE, y=`18RG`)) +
+  labs(title = "PY18 Data")
+
+ggplot(data = py19) +
+  geom_line(mapping = aes(x=DATE, y=`19RG`)) +
+  labs(title = "PY19 Data")
+
+ggplot(data = py20) +
+  geom_line(mapping = aes(x=DATE, y=`20RG`)) +
+  labs(title = "PY20 Data")
+
+ggplot(data = py21) +
+  geom_line(mapping = aes(x=DATE, y=`21RG`)) +
+  labs(title = "PY21 Data")
+
+# All data sets show what seems to be an outlier at the beginning of the series
+
+pyMnth <- function(py) {
+  # Takes a Proof Set time series 
+  # Removes outliers from the series using +/- 3 standard deviations criteria
+  # Removes records with sales value of zero
+  # Groups sales by year and month
+  # Returns a Proof Set time series by month
+  pyStdDev <- sd(unlist(py[,2]),na.rm=TRUE)
+  pyMean <- mean(unlist(py[,2]),na.rm=TRUE)
+  
+  pyCols <- colnames(py)
+  py <- rename(py, sales=pyCols[[2]])
+  
+  py$zVals <- (py[,2]-pyMean)/pyStdDev
+  py$outLier <- ifelse(abs(py$zVals)>3,1,0)
+  py$month <- month(py[[pyCols[[1]]]])
+  py$year <- year(py[[pyCols[[1]]]])
+  
+  py$lag1 <- rep(NA,length(py[,2]))
+  length(py$lag1)
+  for (indx in 2:length(py$lag1)) {
+    py[indx,7] <- py[indx-1,2]
+  }
+  
+  pyMonthly <- py %>%
+    filter(outLier == 0) %>%
+    filter(sales > 0) %>%
+    group_by(year,month) %>%
+    summarize(unitsMonth = sum(sales,na.rm=TRUE))
+  
+  pyMonthly$period <- rep(NA,length(pyMonthly$unitsMonth))
+  for (indx in 1:length(pyMonthly$period)) {
+    pyMonthly[indx,4] <- indx
+  }
+  pyMonthly
+}  
+
+pyPlt <- function(pyM) {
+  # Takes a Proof Set time series
+  # Returns a plot for the time series: sales per month
+  toPlt <- pyMnth(pyM)
+  ggplot(data = toPlt) +
+    geom_line(mapping = aes(x=period,y=unitsMonth)) + 
+    scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25))
+}
+
+pyPlt(py15)
+pyPlt(py16)
+pyPlt(py17)
+pyPlt(py18)
+pyPlt(py19)
+pyPlt(py20)
+pyPlt(py21)
+
+# Every Proof Set series seem to have the same shape
+
+pyYr <- function(py) {
+  # Takes a Proof Set time series 
+  # Groups sales by year 
+  # Returns a Proof Set time series by year
+  
+  #pyStdDev <- sd(unlist(py[,2]),na.rm=TRUE)
+  #pyMean <- mean(unlist(py[,2]),na.rm=TRUE)
+  
+  pyCols <- colnames(py)
+  py <- rename(py, sales=pyCols[[2]])
+  
+  #py$zVals <- (py[,2]-pyMean)/pyStdDev
+  #py$outLier <- ifelse(abs(py$zVals)>3,1,0)
+  py$month <- month(py[[pyCols[[1]]]])
+  py$year <- year(py[[pyCols[[1]]]])
+  
+  pyPY <- py %>%
+    # filter(outLier == 0) %>%
+    filter(sales > 0) %>%
+    group_by(year) %>%
+    summarize(unitsYr = sum(sales,na.rm=TRUE))
+  
+  pyPY$period <- rep(NA,length(pyPY$unitsYr))
+  for (indx in 1:length(pyPY$period)) {
+    pyPY[indx,3] <- indx
+  }
+  pyPY
+}  
+
+df15 <- pyYr(py15)
+df16 <- pyYr(py16)
+df17 <- pyYr(py17)
+df18 <- pyYr(py18)
+df19 <- pyYr(py19)
+df20 <- pyYr(py20)
+df21 <- pyYr(py21)
+
+# When analyzed by year there is a rapid trend to zero
